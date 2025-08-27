@@ -16,37 +16,15 @@ import java.util.Map;
  */
 public class IndoorGMLGraph {
 
-    /** Representation of a cell space node in the graph. */
-    public static class GraphNode {
-        public final String id;
-        public final String label;
+    private final List<CellSpace> cellSpaces = new ArrayList<>();
+    private final List<Transition> transitions = new ArrayList<>();
 
-        public GraphNode(String id, String label) {
-            this.id = id;
-            this.label = label;
-        }
+    public List<CellSpace> getCellSpaces() {
+        return cellSpaces;
     }
 
-    /** Representation of an edge between two cell spaces. */
-    public static class GraphEdge {
-        public final GraphNode from;
-        public final GraphNode to;
-
-        public GraphEdge(GraphNode from, GraphNode to) {
-            this.from = from;
-            this.to = to;
-        }
-    }
-
-    private final List<GraphNode> nodes = new ArrayList<>();
-    private final List<GraphEdge> edges = new ArrayList<>();
-
-    public List<GraphNode> getNodes() {
-        return nodes;
-    }
-
-    public List<GraphEdge> getEdges() {
-        return edges;
+    public List<Transition> getTransitions() {
+        return transitions;
     }
 
     /**
@@ -62,8 +40,8 @@ public class IndoorGMLGraph {
         String gmlNs = "http://www.opengis.net/gml/3.2";
         String xlinkNs = "http://www.w3.org/1999/xlink";
 
-        // Parse cell spaces and create graph nodes
-        Map<String, GraphNode> cellMap = new HashMap<>();
+        // Parse cell spaces
+        Map<String, CellSpace> cellMap = new HashMap<>();
         NodeList cellSpaces = doc.getElementsByTagNameNS("*", "CellSpace");
         for (int i = 0; i < cellSpaces.getLength(); i++) {
             Element cs = (Element) cellSpaces.item(i);
@@ -71,18 +49,21 @@ public class IndoorGMLGraph {
             if (id == null || id.isEmpty()) {
                 id = cs.getAttribute("id");
             }
-            String label = id;
-            NodeList names = cs.getElementsByTagNameNS(gmlNs, "name");
-            if (names.getLength() > 0) {
-                label = names.item(0).getTextContent();
+            CellSpace cell = new CellSpace();
+            // override generated id with GML id if present
+            if (id != null && !id.isEmpty()) {
+                try {
+                    java.lang.reflect.Field f = CellSpace.class.getDeclaredField("id");
+                    f.setAccessible(true);
+                    f.set(cell, id);
+                } catch (Exception ignored) {}
             }
-            GraphNode node = new GraphNode(id, label);
-            graph.nodes.add(node);
-            cellMap.put(id, node);
+            graph.cellSpaces.add(cell);
+            cellMap.put(id, cell);
         }
 
-        // Map states to cell space nodes
-        Map<String, GraphNode> stateToNode = new HashMap<>();
+        // Map states to cell spaces
+        Map<String, StatePoint> stateMap = new HashMap<>();
         NodeList states = doc.getElementsByTagNameNS("*", "State");
         for (int i = 0; i < states.getLength(); i++) {
             Element st = (Element) states.item(i);
@@ -97,38 +78,41 @@ public class IndoorGMLGraph {
                 if (href.startsWith("#")) {
                     href = href.substring(1);
                 }
-                GraphNode node = cellMap.get(href);
-                if (node != null) {
-                    stateToNode.put(sid, node);
+                CellSpace cell = cellMap.get(href);
+                if (cell != null) {
+                    StatePoint sp = new StatePoint();
+                    cell.setState(sp);
+                    cell.setStateRef(sid);
+                    stateMap.put(sid, sp);
                 }
             }
         }
 
-        // Parse transitions and create edges between the connected cell spaces
+        // Parse transitions and create edges between states
         NodeList transitions = doc.getElementsByTagNameNS("*", "Transition");
         for (int i = 0; i < transitions.getLength(); i++) {
             Element tr = (Element) transitions.item(i);
             NodeList connects = tr.getElementsByTagNameNS("*", "connects");
-            GraphNode a = null;
-            GraphNode b = null;
+            StatePoint a = null;
+            StatePoint b = null;
             for (int j = 0; j < connects.getLength(); j++) {
                 Element c = (Element) connects.item(j);
                 String href = c.getAttributeNS(xlinkNs, "href");
                 if (href.startsWith("#")) {
                     href = href.substring(1);
                 }
-                GraphNode node = stateToNode.get(href);
-                if (node != null) {
+                StatePoint sp = stateMap.get(href);
+                if (sp != null) {
                     if (a == null) {
-                        a = node;
+                        a = sp;
                     } else if (b == null) {
-                        b = node;
+                        b = sp;
                         break;
                     }
                 }
             }
             if (a != null && b != null) {
-                graph.edges.add(new GraphEdge(a, b));
+                graph.transitions.add(new Transition(a, b));
             }
         }
         return graph;
