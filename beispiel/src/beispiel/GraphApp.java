@@ -11,6 +11,7 @@ import javafx.stage.Stage;
 
 import java.io.File;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -23,19 +24,21 @@ public class GraphApp extends Application {
         String filePath = getParameters().getUnnamed().isEmpty()
                 ? "indoor.gml"
                 : getParameters().getUnnamed().get(0);
-        IndoorGMLGraph graph = IndoorGMLGraph.fromFile(new File(filePath));
+        IndoorGMLParser.ParsedData data = IndoorGMLParser.parse(new File(filePath));
+        List<CellSpace> cellSpaces = data.getCellSpaces();
+        Map<String, List<String>> adjacencyGraph = data.getAdjacencyGraph();
 
         Pane root = new Pane();
-        int n = graph.getCellSpaces().size();
+        int n = cellSpaces.size();
         double centerX = 300;
         double centerY = 300;
         double radius = 250;
 
-        Map<StatePoint, Circle> stateCircles = new HashMap<>();
+        Map<String, Circle> cellCircles = new HashMap<>();
 
         final Circle[] selected = new Circle[1];
         for (int i = 0; i < n; i++) {
-            CellSpace cell = graph.getCellSpaces().get(i);
+            CellSpace cell = cellSpaces.get(i);
             StatePoint state = cell.getState();
             double angle = 2 * Math.PI * i / n;
             double x = centerX + radius * Math.cos(angle);
@@ -69,21 +72,26 @@ public class GraphApp extends Application {
                 state.setPosition(new Vector3d(newX, newY, 0));
             });
 
-            stateCircles.put(state, circle);
+            cellCircles.put(cell.getId(), circle);
             root.getChildren().addAll(circle, text);
         }
 
-        for (Transition tr : graph.getTransitions()) {
-            Circle c1 = stateCircles.get(tr.getStateA());
-            Circle c2 = stateCircles.get(tr.getStateB());
-            if (c1 != null && c2 != null) {
-                Line line = new Line();
-                line.startXProperty().bind(c1.centerXProperty());
-                line.startYProperty().bind(c1.centerYProperty());
-                line.endXProperty().bind(c2.centerXProperty());
-                line.endYProperty().bind(c2.centerYProperty());
-                tr.setFxLine(line);
-                root.getChildren().add(0, line);
+        for (Map.Entry<String, List<String>> entry : adjacencyGraph.entrySet()) {
+            String idA = entry.getKey();
+            Circle c1 = cellCircles.get(idA);
+            if (c1 == null) continue;
+            for (String idB : entry.getValue()) {
+                if (idA.compareTo(idB) < 0) {
+                    Circle c2 = cellCircles.get(idB);
+                    if (c2 != null) {
+                        Line line = new Line();
+                        line.startXProperty().bind(c1.centerXProperty());
+                        line.startYProperty().bind(c1.centerYProperty());
+                        line.endXProperty().bind(c2.centerXProperty());
+                        line.endYProperty().bind(c2.centerYProperty());
+                        root.getChildren().add(0, line);
+                    }
+                }
             }
         }
 
